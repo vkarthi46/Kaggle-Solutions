@@ -1,0 +1,211 @@
+options(java.parameters="-Xmx8g")
+pacman::p_load(data.table,irlba,sqldf,gbm,randomForest,extraTrees,glmnet)
+
+#import and merge
+setwd("C:\\Users\\vkarth2\\Desktop\\Kaggle\\Amazon.com - Employee Access Challenge")
+source("__final_utils.R")
+
+
+#######################################################################################################################
+#import and merge
+train=read.csv(file="train.csv")
+test=read.csv(file="test.csv")
+
+train$id=100000+c(1:dim(train)[1])
+test$ACTION=(-1)
+
+data1=rbind(train, test)
+
+data1$ACTION0=data1$ACTION
+data1$ACTION=(1-data1$ACTION0)
+data1$y=data1$ACTION
+data1$y[data1$y>1]=0
+data1$ws=1
+data1$ws[data1$ACTION0<0]=0
+
+data1$dummy='A'
+data1$split1=0
+data1$split1[data1$ACTION0<0]=2
+
+#######################################################################################################################
+#convert variables into sequential IDs
+data1$res_f=factor(data1$RESOURCE)
+data1$res_f_id=as.integer(data1$res_f)
+data1$mgr_f=factor(data1$MGR_ID)
+data1$mgr_f_id=as.integer(data1$mgr_f)
+data1$rocd_f=factor(data1$ROLE_CODE)
+data1$rocd_f_id=as.integer(data1$rocd_f)
+data1$rr1_f=factor(data1$ROLE_ROLLUP_1)
+data1$rr1_f_id=as.integer(data1$rr1_f)
+data1$rr2_f=factor(data1$ROLE_ROLLUP_2)
+data1$rr2_f_id=as.integer(data1$rr2_f)
+data1$rt_f=factor(data1$ROLE_TITLE)
+data1$rt_f_id=as.integer(data1$rt_f)
+data1$rf_f=factor(data1$ROLE_FAMILY)
+data1$rf_f_id=as.integer(data1$rf_f)
+data1$rd_f=factor(data1$ROLE_DEPTNAME)
+data1$rd_f_id=as.integer(data1$rd_f)
+data1$rfd_f=factor(data1$ROLE_FAMILY_DESC)
+data1$rfd_f_id=as.integer(data1$rfd_f)
+
+data1$mgr_res_cnt=my.f2cnt(data1, "MGR_ID", "RESOURCE")
+
+data1$mgr_res_f=as.factor(data1$MGR_ID*10000+data1$RESOURCE)
+data1$mgr_res_f_id=as.integer(data1$mgr_res_f)
+
+#######################################################################################################################
+#one way count
+mean_t=with(data1[data1$split1==0,], sum(ACTION)*1.0/length(ACTION))
+for(ii in 2:10) {
+  print(names(data1)[ii])
+  data1$x=data1[, ii]
+  sum1=sqldf("select x, sum(1) as cnt
+              from data1  group by 1 ")
+  tmp=sqldf("select cnt from data1 a left join sum1 b on a.x=b.x")
+  data1[, paste(names(data1)[ii], "_cnt", sep="")]=tmp$cnt
+}
+
+#######################################################################################################################
+#selected 2-way count
+data1$mgr_rocd_cnt=my.f2cnt(data1, "MGR_ID", "ROLE_CODE")
+data1$mgr_rd_cnt=my.f2cnt(data1, "MGR_ID", "ROLE_DEPTNAME")
+data1$mgr_rf_cnt=my.f2cnt(data1, "MGR_ID", "ROLE_FAMILY")
+data1$mgr_rfd_cnt=my.f2cnt(data1, "MGR_ID", "ROLE_FAMILY_DESC")
+data1$mgr_rt_cnt=my.f2cnt(data1, "MGR_ID", "ROLE_TITLE")
+data1$mgr_rr1_cnt=my.f2cnt(data1, "MGR_ID", "ROLE_ROLLUP_1")
+data1$mgr_rr2_cnt=my.f2cnt(data1, "MGR_ID", "ROLE_ROLLUP_2")
+
+data1$res_rf_cnt=my.f2cnt(data1, "RESOURCE", "ROLE_FAMILY")
+data1$res_rfd_cnt=my.f2cnt(data1, "RESOURCE", "ROLE_FAMILY_DESC")
+data1$res_rt_cnt=my.f2cnt(data1, "RESOURCE", "ROLE_TITLE")
+data1$res_rd_cnt=my.f2cnt(data1, "RESOURCE", "ROLE_DEPTNAME")
+data1$res_rocd_cnt=my.f2cnt(data1, "RESOURCE", "ROLE_CODE")
+data1$res_rr1_cnt=my.f2cnt(data1, "RESOURCE", "ROLE_ROLLUP_1")
+data1$res_rr2_cnt=my.f2cnt(data1, "RESOURCE", "ROLE_ROLLUP_2")
+
+data1$rr1_rr2_cnt=my.f2cnt(data1, "ROLE_ROLLUP_1", "ROLE_ROLLUP_2")
+data1$rr1_rf_cnt=my.f2cnt(data1, "ROLE_ROLLUP_1", "ROLE_FAMILY")
+data1$rr1_rfd_cnt=my.f2cnt(data1, "ROLE_ROLLUP_1", "ROLE_FAMILY_DESC")
+data1$rr1_rt_cnt=my.f2cnt(data1, "ROLE_ROLLUP_1", "ROLE_TITLE")
+data1$rr1_rd_cnt=my.f2cnt(data1, "ROLE_ROLLUP_1", "ROLE_DEPTNAME")
+data1$rr1_rocd_cnt=my.f2cnt(data1, "ROLE_ROLLUP_1", "ROLE_CODE")
+
+data1$rr2_rf_cnt=my.f2cnt(data1, "ROLE_ROLLUP_2", "ROLE_FAMILY")
+data1$rr2_rfd_cnt=my.f2cnt(data1, "ROLE_ROLLUP_2", "ROLE_FAMILY_DESC")
+data1$rr2_rt_cnt=my.f2cnt(data1, "ROLE_ROLLUP_2", "ROLE_TITLE")
+data1$rr2_rd_cnt=my.f2cnt(data1, "ROLE_ROLLUP_2", "ROLE_DEPTNAME")
+data1$rr2_rocd_cnt=my.f2cnt(data1, "ROLE_ROLLUP_2", "ROLE_CODE")
+
+data1$rf_rfd_cnt=my.f2cnt(data1, "ROLE_FAMILY", "ROLE_FAMILY_DESC")
+data1$rf_rt_cnt=my.f2cnt(data1, "ROLE_FAMILY", "ROLE_TITLE")
+data1$rf_rd_cnt=my.f2cnt(data1, "ROLE_FAMILY", "ROLE_DEPTNAME")
+data1$rf_rocd_cnt=my.f2cnt(data1, "ROLE_FAMILY", "ROLE_CODE")
+
+data1$rfd_rt_cnt=my.f2cnt(data1, "ROLE_FAMILY_DESC", "ROLE_TITLE")
+data1$rfd_rd_cnt=my.f2cnt(data1, "ROLE_FAMILY_DESC", "ROLE_DEPTNAME")
+data1$rfd_rocd_cnt=my.f2cnt(data1, "ROLE_FAMILY_DESC", "ROLE_CODE")
+
+data1$rt_rd_cnt=my.f2cnt(data1, "ROLE_TITLE", "ROLE_DEPTNAME")
+data1$rt_rocd_cnt=my.f2cnt(data1, "ROLE_TITLE", "ROLE_CODE")
+
+data1$rd_rocd_cnt=my.f2cnt(data1, "ROLE_DEPTNAME", "ROLE_CODE")
+
+data1$rd_rf_cnt=my.f2cnt(data1, "ROLE_DEPTNAME", "ROLE_FAMILY")
+
+
+#######################################################################################################################
+#selected 3 way count
+data1$res_mgr_rr2_cnt=my.f3cnt(data1, "RESOURCE", "MGR_ID", "ROLE_ROLLUP_2")
+data1$res_mgr_rd_cnt=my.f3cnt(data1, "RESOURCE", "MGR_ID", "ROLE_DEPTNAME")
+data1$res_mgr_rocd_cnt=my.f3cnt(data1, "RESOURCE", "MGR_ID", "ROLE_CODE")
+data1$res_mgr_rdf_cnt=my.f3cnt(data1, "RESOURCE", "MGR_ID", "ROLE_FAMILY_DESC")
+data1$res_mgr_rf_cnt=my.f3cnt(data1, "RESOURCE", "MGR_ID", "ROLE_FAMILY")
+data1$rf_mgr_rd_cnt=my.f3cnt(data1, "ROLE_FAMILY", "MGR_ID", "ROLE_DEPTNAME")
+data1$rf_mgr_rr2_cnt=my.f3cnt(data1, "ROLE_FAMILY", "MGR_ID", "ROLE_ROLLUP_2")
+data1$res_rd_rf_cnt=my.f3cnt(data1, "RESOURCE", "ROLE_DEPTNAME", "ROLE_FAMILY")
+data1$res_rd_rr2_cnt=my.f3cnt(data1, "RESOURCE", "ROLE_DEPTNAME", "ROLE_ROLLUP_2")
+
+#######################################################################################################################
+#define rid -- combination of all "role" related variables
+sum1=sqldf("select role_rollup_1, role_rollup_2, role_title, role_deptname, role_family, role_family_desc, role_code, count(*) as cnt
+            from data1 group by 1,2,3,4,5,6,7")
+
+sum1$role_id=c(1:dim(sum1)[1])
+
+tmp=sqldf("select role_id, b.cnt from data1 a join sum1 b on a.role_rollup_1=b.role_rollup_1 and a.role_rollup_2=b.role_rollup_2
+           and a.role_title=b.role_title and a.role_deptname=b.role_deptname and a.role_family=b.role_family and a.role_family_desc=b.role_family_desc
+           and a.role_code=b.role_code")
+data1$rid=tmp$role_id
+
+data1$rid_res_cnt=my.f2cnt(data1, "rid", "RESOURCE")
+data1$rid_cnt=my.f2cnt(data1, "rid", "dummy")
+data1$all_but_res_cnt=my.f2cnt(data1, "rid", "MGR_ID")
+
+#######################################################################################################################
+#role type id -- combination of some role related vars.
+sum1=sqldf("select role_rollup_1, role_rollup_2, role_title, role_deptname, role_family, count(*) as cnt
+            from data1 group by 1,2,3,4,5")
+
+sum1$roletype_id=c(1:dim(sum1)[1])
+
+tmp=sqldf("select roletype_id, b.cnt from data1 a join sum1 b on a.role_rollup_1=b.role_rollup_1 and a.role_rollup_2=b.role_rollup_2
+           and a.role_title=b.role_title and a.role_deptname=b.role_deptname and a.role_family=b.role_family")
+data1$rtype_id=tmp$roletype_id
+
+
+data1$rtype_cnt=my.f2cnt(data1, "rtype_id", "dummy")
+data1$all_but_rfd_cnt=my.f2cnt(data1, "mgr_res_f_id", "rtype_id")
+
+#######################################################################################################################
+#some eigen values for 2-way interactions
+sum1=sqldf("select rid, res_f_id, sum(1) as cnt from data1 group by 1, 2")
+sm1=sparseMatrix(i=sum1$res_f_id, j=sum1$rid, x=1)
+
+svd1=irlba(sm1, nu=5, nv=5)
+
+data1$rid_ev1=svd1$v[data1$rid,1]
+data1$rid_ev2=svd1$v[data1$rid,2]
+data1$rid_ev3=svd1$v[data1$rid,3]
+data1$rid_ev4=svd1$v[data1$rid,4]
+data1$rid_ev5=svd1$v[data1$rid,5]
+
+data1$res_ev1=svd1$u[data1$res_f_id,1]
+data1$res_ev2=svd1$u[data1$res_f_id,2]
+data1$res_ev3=svd1$u[data1$res_f_id,3]
+data1$res_ev4=svd1$u[data1$res_f_id,4]
+data1$res_ev5=svd1$u[data1$res_f_id,5]
+
+sum1=sqldf("select rid, mgr_f_id, sum(1) as cnt from data1 group by 1, 2")
+sm1=sparseMatrix(i=sum1$mgr_f_id, j=sum1$rid, x=1)
+
+svd1=irlba(sm1, nu=5, nv=5)
+
+data1$rid_mgr_ev1=svd1$v[data1$rid,1]
+data1$rid_mgr_ev2=svd1$v[data1$rid,2]
+data1$rid_mgr_ev3=svd1$v[data1$rid,3]
+data1$rid_mgr_ev4=svd1$v[data1$rid,4]
+data1$rid_mgr_ev5=svd1$v[data1$rid,5]
+
+data1$mgr_rid_ev1=svd1$u[data1$mgr_f_id,1]
+data1$mgr_rid_ev2=svd1$u[data1$mgr_f_id,2]
+data1$mgr_rid_ev3=svd1$u[data1$mgr_f_id,3]
+data1$mgr_rid_ev4=svd1$u[data1$mgr_f_id,4]
+data1$mgr_rid_ev5=svd1$u[data1$mgr_f_id,5]
+
+sum1=sqldf("select res_f_id, mgr_f_id, sum(1) as cnt from data1 group by 1, 2")
+sm1=sparseMatrix(i=sum1$mgr_f_id, j=sum1$res_f_id, x=1)
+
+svd1=irlba(sm1, nu=5, nv=5)
+
+data1$res_mgr_ev1=svd1$v[data1$res_f_id,1]
+data1$res_mgr_ev2=svd1$v[data1$res_f_id,2]
+data1$res_mgr_ev3=svd1$v[data1$res_f_id,3]
+data1$res_mgr_ev4=svd1$v[data1$res_f_id,4]
+data1$res_mgr_ev5=svd1$v[data1$res_f_id,5]
+
+data1$mgr_res_ev1=svd1$u[data1$mgr_f_id,1]
+data1$mgr_res_ev2=svd1$u[data1$mgr_f_id,2]
+data1$mgr_res_ev3=svd1$u[data1$mgr_f_id,3]
+data1$mgr_res_ev4=svd1$u[data1$mgr_f_id,4]
+data1$mgr_res_ev5=svd1$u[data1$mgr_f_id,5]
+
