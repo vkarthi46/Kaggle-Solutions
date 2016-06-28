@@ -1,0 +1,28 @@
+# Integer Sequence Learning
+# Integer sequence Learning
+setwd("C:\\Users\\vkarth2\\Desktop\\Kaggle\\Integer Sequence Learning")
+
+pacman::p_load(dplyr,readr,stringr)
+set.seed(1234)
+options(scipen=999) #Important: prevents scientific notation when writing big integers
+
+test=read_csv("test.csv")
+
+# Because R's mode() tells you the internal storage format ┌( ಠ_ಠ)┘
+Mode=function(x) {
+  ux=unique(x)
+  ux[which.max(tabulate(match(x, ux)))]
+}
+
+
+# Parse string sequence to a list of integers
+parseSequence <- function(str) {
+  return(as.numeric(str_split(str, ",")[[1]]))
+}
+
+modeBenchmark <- test %>%
+  rowwise(test) %>%
+  mutate(Last = Mode(parseSequence(Sequence))) %>%
+  select(Id, Last) %>%
+  arrange(Id)
+  write_csv(modeBenchmark, "mode_benchmark.csv")
