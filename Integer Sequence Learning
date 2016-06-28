@@ -1,5 +1,4 @@
 # Integer Sequence Learning
-# Integer sequence Learning
 setwd("C:\\Users\\vkarth2\\Desktop\\Kaggle\\Integer Sequence Learning")
 
 pacman::p_load(dplyr,readr,stringr)
